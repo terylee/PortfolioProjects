@@ -1,4 +1,4 @@
-
+-- Lấy dữ liệu từ source
 WITH trans_table as (
 SELECT  OrderCreatedDate
       ,[OrderShippingDate]
@@ -6,27 +6,27 @@ SELECT  OrderCreatedDate
       ,[OrderChannel]
       ,[OrderMethod]
       ,[RestaurantName]
-      ,[OrderCreatedDay]
-      ,[OrderCreatedTime]
-      ,[OrderShippingTime]
       ,[OrderStatusDate]
       ,[OrderStatus]
       ,[CustomerName]
       ,[CustomerPhone]
       ,[OrderTotal]
-  FROM [MIS].[dbo].[Transactions]
+  FROM [Transactions]
   WHERE  OrderStatus = N'Hoàn tất' AND 
-    --OrderChannel = 'Online' AND
-    OrderShippingDate BETWEEN '2023-01-01' AND '2024-06-30'
+    OrderShippingDate BETWEEN '2024-01-01' AND '2024-12-31'
 )
+
+-- Tính toán các chỉ số trong rfm
 , rfm_table as (
     SELECT CustomerPhone
-        , DATEDIFF(DAY, MAX(OrderCreatedDate), '2024-06-30')+1 recency
-        , COUNT( DISTINCT OrderID)/((DATEDIFF(DAY,IIF( YEAR(MIN(OrderCreatedDate)) < 2023, '2023-01-01', MIN(OrderCreatedDate)), '2024-06-30' )+1)*1.0/365)  frequency_per_year
+        , DATEDIFF(DAY, MAX(OrderCreatedDate), '2024-12-31')+1 recency
+        , COUNT( DISTINCT OrderID)/((DATEDIFF(DAY,IIF(YEAR(MIN(OrderCreatedDate)) < 2024, '2024-01-01', MIN(OrderCreatedDate)), '2024-12-31' )+1)*1.0/365)  frequency_per_year
         , SUM(OrderTotal*1.0) monetary
     FROM trans_table
     GROUP BY CustomerPhone
 )
+
+-- Chia dữ liệu thành 5 phần tương ứng với mỗi thang điểm
 , rank_table AS (
    SELECT *
        , NTILE(5) OVER (ORDER BY recency DESC) r_rank
@@ -37,13 +37,13 @@ SELECT  OrderCreatedDate
 , date_table as (
   SELECT  [CustomerPhone]
     , MIN(OrderCreatedDate) start_date
-    , '2024-06-30' end_date
+    , '2024-12-31' end_date
     , MAX(OrderCreatedDate) last_date
-    , DATEDIFF(DAY,MIN(OrderCreatedDate), '2024-06-30' )+1 ops_day
-    , (DATEDIFF(DAY,MIN(OrderCreatedDate), '2024-06-30' )+1)*1.0/365  year_w_me
-    , DATEDIFF(DAY, IIF(YEAR(MIN(OrderCreatedDate)) < 2023, '2023-01-01', MIN(OrderCreatedDate)),'2024-06-30')*1.0+1  year_normalize      
-  FROM [MIS].[dbo].[Transactions]
-  WHERE  OrderStatus = N'Hoàn tất' --AND OrderCreatedDate BETWEEN '2023-01-01' AND '2024-06-30' 
+    , DATEDIFF(DAY,MIN(OrderCreatedDate), '2024-12-31' )+1 ops_day
+    , (DATEDIFF(DAY,MIN(OrderCreatedDate), '2024-12-31' )+1)*1.0/365  year_w_me
+    , DATEDIFF(DAY, IIF(YEAR(MIN(OrderCreatedDate)) < 2024, '2024-01-01', MIN(OrderCreatedDate)),'2024-12-31')*1.0+1  year_normalize      --chuẩn hóa những khách hàng lâu năm để dữ liệu không bị bias quá
+  FROM [Transactions]
+  WHERE  OrderStatus = N'Hoàn tất' --AND OrderCreatedDate BETWEEN '2024-01-01' AND '2024-12-31' 
   GROUP BY CustomerPhone 
 )
 , TA_table as (
@@ -51,6 +51,7 @@ SELECT  OrderCreatedDate
         , COUNT( DISTINCT CONVERT (varchar(10),OrderCreatedDate)) TC
         , SUM(OrderTotal*1.0)/(COUNT( DISTINCT CONVERT (varchar(10),OrderCreatedDate))*1.0) TA
     FROM trans_table
+    WHERE YEAR(OrderCreatedDate) >= 2023
     GROUP BY CustomerPhone
 )
    SELECT ra.CustomerPhone
@@ -66,8 +67,9 @@ SELECT  OrderCreatedDate
         ON ra.CustomerPhone = dat.CustomerPhone
     LEFT JOIN TA_table ta
         ON ra.CustomerPhone = ta.CustomerPhone
---WHERE ra.CustomerPhone = '0978970681'
-DROP TABLE #save_table
+
+-- Lưu bảng để truy vấn nhanh hơn
+Drop TABLE #save_table
 
 SELECT *
 FROM #save_table
